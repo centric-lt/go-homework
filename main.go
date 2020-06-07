@@ -1,25 +1,25 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
-	"strconv"
-	"time"
-	"encoding/json"
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
+	"strconv"
+	"time"
 )
 
 type measurementResponse struct {
-	host string
-	protocol string
-	results measurementResults
+	Host     string             `json:"host"`
+	Protocol string             `json:"protocol"`
+	Results  measurementResults `json:"results"`
 }
 
 type measurementResults struct {
-	measurements []string
-	averageLatency string
+	Measurements   []string `json:"measurements"`
+	AverageLatency string   `json:"averageLatency"`
 }
 
 func handleRequests() {
@@ -28,30 +28,39 @@ func handleRequests() {
 }
 
 func measureRequest(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/j")
 
 	keys := r.URL.Query()
-	host := keys["host"][0]
-	protocol := keys["protocol"][0]
-	samples, _:= strconv.Atoi(keys["samples"][0])
+	m := measurementResponse{}
 
-	url := url.URL{Host: host, Scheme: protocol}
-	fmt.Fprintln(w, url.String())
+	m.Host = keys["host"][0]
+	m.Protocol = keys["protocol"][0]
 
-	w.WriteHeader(http.StatusOK)
+	samples, _ := strconv.Atoi(keys["samples"][0])
+	m.Results.Measurements = make([]string, samples)
 
-	fmt.Fprintln(w, "Host: "+host)
-	fmt.Fprintln(w, "protocol: "+protocol)
-	fmt.Fprintln(w, "samples: "+ strconv.Itoa(samples))
+	u := url.URL{Host: m.Host, Scheme: m.Protocol}
 
-	results := measurementResults{}
+	c := make(chan time.Duration, samples)
 	for i := 0; i < samples; i++ {
-		results.measurements.
+		measureTTFB(u, c)
 	}
-	measureTTFB(url)
+
+	var sum int64 = 0
+	for i := 0; i < samples; i++ {
+		t := <-c
+		sum += t.Milliseconds()
+		m.Results.Measurements[i] = getScaleTime(t)
+	}
+
+	strSum, _ := time.ParseDuration(fmt.Sprintf("%dms", sum/int64(len(m.Results.Measurements))))
+	m.Results.AverageLatency = getScaleTime(strSum)
+
+	j, _ := json.MarshalIndent(&m, "", "    ")
+	fmt.Fprintln(w, string(j))
 }
 
-func measureTTFB(url url.URL) time.Duration {
+func measureTTFB(url url.URL, c chan time.Duration) {
 	var t0, t1 time.Time
 
 	req, _ := http.NewRequest("GET", url.String(), nil)
@@ -63,16 +72,19 @@ func measureTTFB(url url.URL) time.Duration {
 	t0 = time.Now()
 	http.DefaultTransport.RoundTrip(req)
 
-	fmt.Println("t0: " + t0.String())
-	fmt.Println("t1: " + t1.String())
-	return t1.Sub(t0)
+	c <- t1.Sub(t0)
+	//fmt.Println("t0: " + t0.String())
+	//fmt.Println("t1: " + t1.String())
+}
+
+func getScaleTime(d time.Duration) string {
+	if d.Seconds() < 5 {
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	} else {
+		return fmt.Sprintf("%fs", d.Seconds())
+	}
 }
 
 func main() {
-	//handleRequests()
-	url, _ := url.Parse("https://reddit.com")
-	fmt.Println("before")
-	m := measureTTFB(*url)
-	fmt.Println(m.Milliseconds())
-	fmt.Println("after")
+	handleRequests()
 }
