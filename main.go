@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/aws/aws-lambda-go/lambda"
 	"log"
 	"net/http"
 	"net/http/httptrace"
@@ -116,6 +115,5 @@ func getScaleTime(d time.Duration) string {
 }
 
 func main() {
-	lambda.Start(handleRequests)
-	//handleRequests()
+	handleRequests()
 }
